@@ -39,14 +39,14 @@ async function run() {
     const NFCCollection = client.db('NFCDATA').collection('devices');
 
 
-    app.get('/api/esptemp', async(req, res) =>{
+    app.get('/api/nfcdata', async(req, res) =>{
       const query = {};
       const cursor = NFCCollection.find(query);
       const accounts = await cursor.toArray();
       res.send(accounts);
     })
 
-    app.post('/api/esptempu1', async (req, res) => {
+    app.post('/api/nfc', async (req, res) => {
       const accounts = req.body;
       const result = await NFCCollection.insertOne(accounts);
       res.send(result)
@@ -60,9 +60,8 @@ async function run() {
 
     })
 
-    app.put('/finalsale', async (req, res) => { 
+    app.put('api/finalsale', async (req, res) => { 
       const updatedStock = req.body;
-     
       
       // ---------------------------- update close ---------------------------------- 
       res.send({ 'data': 'succesfully data updated',updatedStock  });
