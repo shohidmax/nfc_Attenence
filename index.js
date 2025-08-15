@@ -45,6 +45,9 @@ async function run() {
       const accounts = await cursor.toArray();
       res.send(accounts);
     })
+    app.get('/api/stts', async(req, res) =>{
+      res.send({"status":"active"});
+    })
    
     app.post('/api/nfc', async (req, res) => {
       const accounts = req.body;
