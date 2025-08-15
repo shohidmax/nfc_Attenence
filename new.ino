@@ -128,10 +128,14 @@ void handleRoot() {
             <div class="card bg-base-100 shadow-xl">
                 <div class="card-body">
                     <h2 class="card-title">Backup Status</h2>
-                    <p><span class="font-bold">Mode:</span> <span id="backupMode">--</span></p>
+                    <div class="form-control">
+                        <label class="label cursor-pointer">
+                            <span class="label-text font-bold">Backup Mode</span> 
+                            <input type="checkbox" class="toggle toggle-warning" id="backupToggle" onchange="toggleBackupMode()" />
+                        </label>
+                    </div>
                     <p><span class="font-bold">Saved Scans:</span> <span id="backupCount">--</span></p>
                     <div class="card-actions justify-end space-x-2">
-                        <form action="/toggle-backup" method="post"><button class="btn btn-sm btn-warning">Toggle Mode</button></form>
                         <form action="/update-all" method="post"><button class="btn btn-sm btn-info">Update</button></form>
                         <button onclick="downloadPDF()" class="btn btn-sm btn-secondary">Download PDF</button>
                     </div>
@@ -177,7 +181,8 @@ void handleRoot() {
     </div>
     <script>
         function updateWifiIcon(rssi){let bars=0;if(rssi>-55)bars=4;else if(rssi>-65)bars=3;else if(rssi>-75)bars=2;else if(rssi>-85)bars=1;const colors=['#d1d5db','#d1d5db','#d1d5db','#d1d5db'];for(let i=0;i<bars;i++){colors[i]='#10b981';}document.getElementById('wifi-icon-svg').innerHTML=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0" stroke="${colors[3]}"></path><path d="M8.5 16.05a6 6 0 0 1 6.98 0" stroke="${colors[2]}"></path><path d="M12 19.5a2 2 0 0 1 .02 0" stroke="${colors[1]}"></path><path d="M12 19.5a2 2 0 0 1 .02 0" fill="${colors[0]}" stroke="none"></path></svg>`;}
-        function fetchData(){fetch('/data').then(r=>r.json()).then(d=>{document.getElementById('deviceName').innerText=d.deviceId;document.getElementById('modalDeviceName').value=d.deviceId;document.getElementById('rssi').innerText=d.rssi;document.getElementById('uid').innerText=d.lastUid;document.getElementById('name').innerText=d.lastScannedName;document.getElementById('designation').innerText=d.lastScannedDesignation;document.getElementById('modalRelayDelay').value=d.relayDelay;const v=document.getElementById('verification');v.innerText=d.lastVerificationStatus;if(d.lastVerificationStatus==='OK')v.className='badge badge-success';else if(d.lastVerificationStatus==='N/A')v.className='badge badge-ghost';else v.className='badge badge-error';const s=document.getElementById('serverStatus');s.innerText=d.serverStatus;s.className=d.serverStatus==='Active'?'badge badge-success':'badge badge-error';const b=document.getElementById('backupMode');b.innerText=d.backupModeEnabled?'ON':'OFF';b.className=d.backupModeEnabled?'badge badge-warning':'badge badge-info';document.getElementById('backupCount').innerText=d.backupCount;updateWifiIcon(d.rssi);});}
+        function fetchData(){fetch('/data').then(r=>r.json()).then(d=>{document.getElementById('deviceName').innerText=d.deviceId;document.getElementById('modalDeviceName').value=d.deviceId;document.getElementById('rssi').innerText=d.rssi;document.getElementById('uid').innerText=d.lastUid;document.getElementById('name').innerText=d.lastScannedName;document.getElementById('designation').innerText=d.lastScannedDesignation;document.getElementById('modalRelayDelay').value=d.relayDelay;const v=document.getElementById('verification');v.innerText=d.lastVerificationStatus;if(d.lastVerificationStatus==='OK')v.className='badge badge-success';else if(d.lastVerificationStatus==='N/A')v.className='badge badge-ghost';else v.className='badge badge-error';const s=document.getElementById('serverStatus');s.innerText=d.serverStatus;s.className=d.serverStatus==='Active'?'badge badge-success':'badge badge-error';document.getElementById('backupToggle').checked=d.backupModeEnabled;document.getElementById('backupCount').innerText=d.backupCount;updateWifiIcon(d.rssi);});}
+        function toggleBackupMode() { fetch('/toggle-backup', { method: 'POST' }).then(() => { setTimeout(fetchData, 250); }); }
         function downloadPDF() {
             fetch('/download-data').then(res => res.json()).then(data => {
                 if (!data || data.length === 0) { alert('No backup data to download.'); return; }
@@ -388,9 +393,18 @@ void loop() {
             backupCount++;
             preferences.putInt("bkWriteIdx", backupWriteIndex);
             preferences.putInt("bkCount", backupCount);
-            showMessage("Saved Locally", String(backupCount) + " scans stored");
+            
+            showMessage("Saved Locally", "Access Granted");
             playSuccessSound();
-            delay(2000);
+
+            // --- Activate relay in backup mode ---
+            Serial.println("Access granted in backup mode. Activating Relay.");
+            digitalWrite(RELAY_PIN, HIGH);
+            delay(relayDelay);
+            digitalWrite(RELAY_PIN, LOW);
+            Serial.println("Relay Deactivated.");
+
+            delay(2000); // Keep a small delay to show the message
         } else {
             showMessage("Backup Full!", "Cannot save scan");
             playFailureSound();
