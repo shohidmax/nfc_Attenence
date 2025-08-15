@@ -122,7 +122,11 @@ void handleRoot() {
                     <h2 class="card-title">Device Status</h2>
                     <p><span class="font-bold">Name:</span> <span id="deviceName">--</span></p>
                     <div class="flex items-center"><span class="font-bold mr-2">WiFi:</span><div id="wifi-icon-svg" class="w-6 h-6"></div><span id="rssi" class="ml-1">--</span> dBm</div>
-                    <p><span class="font-bold">Server:</span> <span id="serverStatus" class="badge badge-ghost">--</span></p>
+                    <div class="flex items-center"><span class="font-bold mr-2">Server:</span><span id="serverStatus" class="badge badge-ghost">--</span>
+                        <button class="btn btn-xs btn-ghost btn-square ml-1" onclick="checkServerNow()">
+                           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"></path></svg>
+                        </button>
+                    </div>
                 </div>
             </div>
             <div class="card bg-base-100 shadow-xl">
@@ -183,6 +187,7 @@ void handleRoot() {
         function updateWifiIcon(rssi){let bars=0;if(rssi>-55)bars=4;else if(rssi>-65)bars=3;else if(rssi>-75)bars=2;else if(rssi>-85)bars=1;const colors=['#d1d5db','#d1d5db','#d1d5db','#d1d5db'];for(let i=0;i<bars;i++){colors[i]='#10b981';}document.getElementById('wifi-icon-svg').innerHTML=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0" stroke="${colors[3]}"></path><path d="M8.5 16.05a6 6 0 0 1 6.98 0" stroke="${colors[2]}"></path><path d="M12 19.5a2 2 0 0 1 .02 0" stroke="${colors[1]}"></path><path d="M12 19.5a2 2 0 0 1 .02 0" fill="${colors[0]}" stroke="none"></path></svg>`;}
         function fetchData(){fetch('/data').then(r=>r.json()).then(d=>{document.getElementById('deviceName').innerText=d.deviceId;document.getElementById('modalDeviceName').value=d.deviceId;document.getElementById('rssi').innerText=d.rssi;document.getElementById('uid').innerText=d.lastUid;document.getElementById('name').innerText=d.lastScannedName;document.getElementById('designation').innerText=d.lastScannedDesignation;document.getElementById('modalRelayDelay').value=d.relayDelay;const v=document.getElementById('verification');v.innerText=d.lastVerificationStatus;if(d.lastVerificationStatus==='OK')v.className='badge badge-success';else if(d.lastVerificationStatus==='N/A')v.className='badge badge-ghost';else v.className='badge badge-error';const s=document.getElementById('serverStatus');s.innerText=d.serverStatus;s.className=d.serverStatus==='Active'?'badge badge-success':'badge badge-error';document.getElementById('backupToggle').checked=d.backupModeEnabled;document.getElementById('backupCount').innerText=d.backupCount;updateWifiIcon(d.rssi);});}
         function toggleBackupMode() { fetch('/toggle-backup', { method: 'POST' }).then(() => { setTimeout(fetchData, 250); }); }
+        function checkServerNow() { fetch('/check-status', { method: 'POST' }).then(() => { setTimeout(fetchData, 500); }); }
         function downloadPDF() {
             fetch('/download-data').then(res => res.json()).then(data => {
                 if (!data || data.length === 0) { alert('No backup data to download.'); return; }
@@ -280,6 +285,12 @@ void handleDownloadData() {
     server.send(200, "application/json", jsonString);
 }
 
+void handleCheckStatus() {
+    Serial.println("Manual server status check requested from web panel.");
+    checkServerStatus();
+    server.send(200, "text/plain", "OK");
+}
+
 // --- Main Setup ---
 void setup() {
   Serial.begin(115200);
@@ -313,6 +324,7 @@ void setup() {
   server.on("/toggle-backup", HTTP_POST, handleToggleBackup);
   server.on("/update-all", HTTP_POST, handleUpdateAll);
   server.on("/download-data", HTTP_GET, handleDownloadData);
+  server.on("/check-status", HTTP_POST, handleCheckStatus); // New endpoint for status check
   server.begin();
   
   showMessage("WiFi Connected!", "IP: " + WiFi.localIP().toString());
