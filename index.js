@@ -46,6 +46,7 @@ async function run() {
       res.send(accounts);
     })
     app.get('/api/stts', async(req, res) =>{
+       const query = {};
       res.send({"status":"active"});
     })
    
