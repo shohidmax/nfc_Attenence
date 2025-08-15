@@ -37,11 +37,18 @@ async function run() {
     await client.connect();
     console.log('db connected');
     const NFCCollection = client.db('NFCDATA').collection('devices');
+    const NFCupdateCollection = client.db('NFCDATA').collection('update');
 
 
     app.get('/api/nfcdata', async(req, res) =>{
       const query = {};
       const cursor = NFCCollection.find(query);
+      const accounts = await cursor.toArray();
+      res.send(accounts);
+    })
+    app.get('/api/nfcdataupdate', async(req, res) =>{
+      const query = {};
+      const cursor = NFCupdateCollection.find(query);
       const accounts = await cursor.toArray();
       res.send(accounts);
     })
@@ -54,6 +61,11 @@ async function run() {
       const accounts = req.body;
       const result = await NFCCollection.insertOne(accounts);
       res.send( { "name": "MD. SARWAR JAHAN", "designation": "Developer", "verify": "OK" });
+    }); 
+    app.post('/api/nfcupdate', async (req, res) => {
+      const accounts = req.body;
+      const result = await NFCupdateCollection.insertOne(accounts);
+      res.send(result);
     }); 
 
     app.delete('/api/data/:id', async (req, res) => {
