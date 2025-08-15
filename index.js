@@ -49,7 +49,7 @@ async function run() {
     app.post('/api/nfc', async (req, res) => {
       const accounts = req.body;
       const result = await NFCCollection.insertOne(accounts);
-      res.send( { "name": "md shohid max ", "designation": "Designation" });
+      res.send( { "name": "md shohid max ", "designation": "web desighner" });
     }); 
 
     app.delete('/api/data/:id', async (req, res) => {
