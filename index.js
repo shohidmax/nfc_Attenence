@@ -37,7 +37,7 @@ async function run() {
     await client.connect();
     console.log('db connected');
     const NFCCollection = client.db('NFCDATA').collection('devices');
-    const NFCupdateCollection = client.db('NFCDATA').collection('update');
+    const NFCupdateCollection = client.db('NFCDATA').collection('updatessedss');
 
 
     app.get('/api/nfcdata', async(req, res) =>{
