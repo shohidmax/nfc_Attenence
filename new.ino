@@ -413,7 +413,7 @@ void loop() {
         showMessage("Access Denied", "", 2);
         delay(4000);
       }
-    } else {
+    } else { 
       playFailureSound();
       lastApiResponse = "HTTP Post Failed";
       lastScannedName = "Error";
