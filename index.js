@@ -68,7 +68,7 @@ async function run() {
       const accounts = req.body;
     console.log(accounts);
       const result = await NFCupdateCollection.insertOne(accounts);
-      res.send(result);
+      res.send("Data updated successfully");
     }); 
 
     app.delete('/api/data/:id', async (req, res) => {
