@@ -26,11 +26,12 @@ unsigned int relayDelay;
 Preferences preferences;
 WebServer server(80);
 
-// -- New Variables for Status & Backup --
+// -- Variables for Status & Backup --
 unsigned long lastStatusCheck = 0;
 const long statusCheckInterval = 300000; // 5 minutes
 String serverStatus = "Unknown";
 bool backupModeEnabled = false;
+bool manualUpdateRequested = false; // Flag for manual update
 int backupReadIndex = 0;
 int backupWriteIndex = 0;
 int backupCount = 0;
@@ -101,6 +102,8 @@ void handleRoot() {
     <title>NFC Controller</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.11.1/dist/full.min.css" rel="stylesheet" type="text/css" />
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body class="bg-base-200 min-h-screen p-4">
     <div class="max-w-xl mx-auto">
@@ -127,8 +130,10 @@ void handleRoot() {
                     <h2 class="card-title">Backup Status</h2>
                     <p><span class="font-bold">Mode:</span> <span id="backupMode">--</span></p>
                     <p><span class="font-bold">Saved Scans:</span> <span id="backupCount">--</span></p>
-                    <div class="card-actions justify-end">
+                    <div class="card-actions justify-end space-x-2">
                         <form action="/toggle-backup" method="post"><button class="btn btn-sm btn-warning">Toggle Mode</button></form>
+                        <form action="/update-all" method="post"><button class="btn btn-sm btn-info">Update</button></form>
+                        <button onclick="downloadPDF()" class="btn btn-sm btn-secondary">Download PDF</button>
                     </div>
                 </div>
             </div>
@@ -173,6 +178,20 @@ void handleRoot() {
     <script>
         function updateWifiIcon(rssi){let bars=0;if(rssi>-55)bars=4;else if(rssi>-65)bars=3;else if(rssi>-75)bars=2;else if(rssi>-85)bars=1;const colors=['#d1d5db','#d1d5db','#d1d5db','#d1d5db'];for(let i=0;i<bars;i++){colors[i]='#10b981';}document.getElementById('wifi-icon-svg').innerHTML=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0" stroke="${colors[3]}"></path><path d="M8.5 16.05a6 6 0 0 1 6.98 0" stroke="${colors[2]}"></path><path d="M12 19.5a2 2 0 0 1 .02 0" stroke="${colors[1]}"></path><path d="M12 19.5a2 2 0 0 1 .02 0" fill="${colors[0]}" stroke="none"></path></svg>`;}
         function fetchData(){fetch('/data').then(r=>r.json()).then(d=>{document.getElementById('deviceName').innerText=d.deviceId;document.getElementById('modalDeviceName').value=d.deviceId;document.getElementById('rssi').innerText=d.rssi;document.getElementById('uid').innerText=d.lastUid;document.getElementById('name').innerText=d.lastScannedName;document.getElementById('designation').innerText=d.lastScannedDesignation;document.getElementById('modalRelayDelay').value=d.relayDelay;const v=document.getElementById('verification');v.innerText=d.lastVerificationStatus;if(d.lastVerificationStatus==='OK')v.className='badge badge-success';else if(d.lastVerificationStatus==='N/A')v.className='badge badge-ghost';else v.className='badge badge-error';const s=document.getElementById('serverStatus');s.innerText=d.serverStatus;s.className=d.serverStatus==='Active'?'badge badge-success':'badge badge-error';const b=document.getElementById('backupMode');b.innerText=d.backupModeEnabled?'ON':'OFF';b.className=d.backupModeEnabled?'badge badge-warning':'badge badge-info';document.getElementById('backupCount').innerText=d.backupCount;updateWifiIcon(d.rssi);});}
+        function downloadPDF() {
+            fetch('/download-data').then(res => res.json()).then(data => {
+                if (!data || data.length === 0) { alert('No backup data to download.'); return; }
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                doc.text("NFC Backup Data", 14, 16);
+                doc.autoTable({
+                    head: [['#', 'UID', 'Data', 'Date', 'Time']],
+                    body: data.map((row, i) => [i + 1, row.uid, row.data, row.date, row.time]),
+                    startY: 20,
+                });
+                doc.save('nfc_backup_data.pdf');
+            }).catch(err => alert('Error downloading data.'));
+        }
         setInterval(fetchData,2000);window.onload=fetchData;
     </script>
 </body></html>
@@ -228,6 +247,33 @@ void handleToggleBackup() {
     server.sendHeader("Location", "/");
     server.send(302, "text/plain", "Toggled!");
 }
+void handleUpdateAll() {
+    manualUpdateRequested = true;
+    server.sendHeader("Location", "/");
+    server.send(302, "text/plain", "Update process started!");
+}
+void handleDownloadData() {
+    JsonDocument doc;
+    JsonArray array = doc.to<JsonArray>();
+
+    if (backupCount > 0) {
+        int tempReadIndex = backupReadIndex;
+        for (int i = 0; i < backupCount; i++) {
+            String key = "scan_" + String(tempReadIndex);
+            String jsonData = preferences.getString(key.c_str(), "");
+            
+            JsonDocument scanDoc;
+            deserializeJson(scanDoc, jsonData);
+            array.add(scanDoc);
+
+            tempReadIndex = (tempReadIndex + 1) % MAX_BACKUP_SCANS;
+        }
+    }
+    
+    String jsonString;
+    serializeJson(doc, jsonString);
+    server.send(200, "application/json", jsonString);
+}
 
 // --- Main Setup ---
 void setup() {
@@ -260,6 +306,8 @@ void setup() {
   server.on("/unlock", HTTP_POST, handleUnlock);
   server.on("/reset-wifi", HTTP_POST, handleResetWifi);
   server.on("/toggle-backup", HTTP_POST, handleToggleBackup);
+  server.on("/update-all", HTTP_POST, handleUpdateAll);
+  server.on("/download-data", HTTP_GET, handleDownloadData); // Changed endpoint
   server.begin();
   
   showMessage("WiFi Connected!", "IP: " + WiFi.localIP().toString());
@@ -280,7 +328,7 @@ void loop() {
       checkServerStatus();
   }
 
-  if (WiFi.status() == WL_CONNECTED && !backupModeEnabled && backupCount > 0) {
+  if ((WiFi.status() == WL_CONNECTED && !backupModeEnabled && backupCount > 0) || (manualUpdateRequested && backupCount > 0)) {
       sendBackedUpData();
   }
 
@@ -333,7 +381,6 @@ void loop() {
     serializeJson(doc, jsonString);
 
     if (WiFi.status() != WL_CONNECTED || backupModeEnabled) {
-        // --- Save to Backup ---
         if (backupCount < MAX_BACKUP_SCANS) {
             String key = "scan_" + String(backupWriteIndex);
             preferences.putString(key.c_str(), jsonString);
@@ -350,7 +397,6 @@ void loop() {
             delay(2000);
         }
     } else {
-        // --- Send to Server ---
         showMessage("Sending data...");
         HTTPClient http;
         http.begin("https://nfc-attenence.onrender.com/api/nfc");
@@ -426,13 +472,17 @@ void sendBackedUpData() {
             Serial.println("Sending backed up scan...");
             showMessage("Syncing...", String(backupCount) + " left");
 
+            String apiUrl = "https://nfc-attenence.onrender.com/api/nfc";
+            if (manualUpdateRequested) {
+                apiUrl = "https://nfc-attenence.onrender.com/api/nfcupdat";
+            }
+
             HTTPClient http;
-            http.begin("https://nfc-attenence.onrender.com/api/nfc");
+            http.begin(apiUrl);
             http.addHeader("Content-Type", "application/json");
             int httpResponseCode = http.POST(jsonData);
 
             if (httpResponseCode > 0) {
-                // Success, remove from backup
                 preferences.remove(key.c_str());
                 backupReadIndex = (backupReadIndex + 1) % MAX_BACKUP_SCANS;
                 backupCount--;
@@ -441,8 +491,15 @@ void sendBackedUpData() {
                 Serial.println("Backup scan sent successfully.");
             } else {
                 Serial.println("Failed to send backup scan, will retry.");
+                manualUpdateRequested = false; // Stop manual update on failure
             }
             http.end();
         }
+        
+        if (backupCount == 0) {
+            manualUpdateRequested = false; // Reset flag when queue is empty
+        }
+    } else {
+        manualUpdateRequested = false; // Reset flag if queue is already empty
     }
 }
