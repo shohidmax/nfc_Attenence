@@ -12,7 +12,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <time.h>
-#include <Preferences.h> // For saving device name
+#include <Preferences.h> // For saving device name and settings
 
 // 2. Define the pins
 #define SS_PIN    5
@@ -22,6 +22,7 @@
 
 // 3. Global Variables
 String deviceId;
+unsigned int relayDelay;
 Preferences preferences;
 WebServer server(80); // Web server on port 80
 
@@ -45,24 +46,11 @@ const long  gmtOffset_sec = 6 * 3600;
 const int   daylightOffset_sec = 0;
 
 // --- Sound Helper Functions ---
+void playScanSound() { tone(BUZZER_PIN, 1200, 100); }
+void playSuccessSound() { tone(BUZZER_PIN, 1500, 150); delay(160); tone(BUZZER_PIN, 1800, 150); }
+void playFailureSound() { tone(BUZZER_PIN, 800, 500); }
 
-void playScanSound() {
-    tone(BUZZER_PIN, 1200, 100);
-}
-
-void playSuccessSound() {
-    tone(BUZZER_PIN, 1500, 150);
-    delay(160);
-    tone(BUZZER_PIN, 1800, 150);
-}
-
-void playFailureSound() {
-    tone(BUZZER_PIN, 800, 500);
-}
-
-
-// --- Helper Functions for Display ---
-
+// --- Display Helper Functions ---
 void drawWifiIcon(int rssi) {
     display.fillRect(110, 0, 18, 8, SSD1306_BLACK);
     for (int i = 0; i < 4; i++) {
@@ -78,9 +66,7 @@ void showMessage(String line1, String line2 = "", int size = 1, bool clear = tru
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 5);
     display.println(line1);
-    if (line2 != "") {
-        display.println(line2);
-    }
+    if (line2 != "") display.println(line2);
     display.display();
 }
 
@@ -107,67 +93,141 @@ void displayUserInfoCard(String name, String designation) {
 void handleRoot() {
     String html = R"rawliteral(
 <!DOCTYPE html>
-<html>
+<html data-theme="light">
 <head>
-    <title>ESP32 NFC Controller</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body { font-family: Arial, sans-serif; background: #f4f4f4; color: #333; text-align: center; }
-        .container { max-width: 600px; margin: auto; padding: 20px; background: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        h1, h2 { color: #0056b3; }
-        .card { background: #eee; padding: 15px; margin-top: 15px; border-radius: 5px; }
-        .label { font-weight: bold; }
-        input[type="text"], input[type="submit"] { width: 80%; padding: 10px; margin-top: 10px; border-radius: 5px; border: 1px solid #ddd; }
-        input[type="submit"] { background: #007bff; color: white; cursor: pointer; border: none; }
-        .unlock-btn { background: #28a745; }
-        .unlock-btn:hover { background: #218838; }
-        .status-ok { color: green; }
-        .status-fail { color: red; }
-    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFC Controller</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.11.1/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <div class="container">
-        <h1>ESP32 NFC Controller</h1>
-        <div class="card">
-            <h2>Device Status</h2>
-            <p><span class="label">Device Name:</span> <span id="deviceName">--</span></p>
-            <p><span class="label">WiFi Signal:</span> <span id="rssi">--</span> dBm</p>
+<body class="bg-base-200 min-h-screen p-4">
+    <div class="max-w-xl mx-auto">
+        <!-- Header -->
+        <div class="navbar bg-base-100 rounded-box shadow-lg">
+            <div class="flex-1">
+                <a class="btn btn-ghost text-xl">NFC Access Control</a>
+            </div>
+            <div class="flex-none">
+                <button class="btn btn-square btn-ghost" onclick="settings_modal.showModal()">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-5 h-5 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"></path></svg>
+                </button>
+            </div>
         </div>
-        <div class="card">
-            <h2>Last Scan Info</h2>
-            <p><span class="label">UID:</span> <span id="uid">--</span></p>
-            <p><span class="label">Name:</span> <span id="name">--</span></p>
-            <p><span class="label">Designation:</span> <span id="designation">--</span></p>
-            <p><span class="label">Verification:</span> <span id="verification">--</span></p>
+
+        <!-- Status Cards -->
+        <div class="grid md:grid-cols-2 gap-4 mt-4">
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                    <h2 class="card-title">Device Status</h2>
+                    <p><span class="font-bold">Name:</span> <span id="deviceName">--</span></p>
+                    <div class="flex items-center">
+                        <span class="font-bold mr-2">WiFi:</span>
+                        <div id="wifi-icon-svg" class="w-6 h-6"></div>
+                        <span id="rssi" class="ml-1">--</span> dBm
+                    </div>
+                </div>
+            </div>
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                    <h2 class="card-title">Manual Control</h2>
+                    <p>Press the button to unlock.</p>
+                    <div class="card-actions justify-end">
+                        <form action="/unlock" method="post"><button class="btn btn-success">Unlock</button></form>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="card">
-            <h2>Manual Control</h2>
-            <form action="/unlock" method="post">
-                <input type="submit" class="unlock-btn" value="Unlock">
-            </form>
+
+        <!-- Last Scan Info -->
+        <div class="card bg-base-100 shadow-xl mt-4">
+            <div class="card-body">
+                <h2 class="card-title">Last Scan Information</h2>
+                <div class="overflow-x-auto">
+                    <table class="table">
+                        <tbody>
+                            <tr><th>UID</th><td id="uid">N/A</td></tr>
+                            <tr><th>Name</th><td id="name">N/A</td></tr>
+                            <tr><th>Designation</th><td id="designation">N/A</td></tr>
+                            <tr><th>Verification</th><td><span id="verification" class="badge badge-ghost">N/A</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-        <div class="card">
-            <h2>Configuration</h2>
-            <form action="/update" method="post">
-                <label for="newId">Change Device Name:</label><br>
-                <input type="text" id="newId" name="newId" placeholder="Enter new name"><br>
-                <input type="submit" value="Update Name">
-            </form>
-        </div>
+
+        <!-- Settings Modal -->
+        <dialog id="settings_modal" class="modal">
+            <div class="modal-box">
+                <h3 class="font-bold text-lg">Settings</h3>
+                <form method="post" action="/settings">
+                    <div class="form-control w-full mt-4">
+                        <label class="label"><span class="label-text">Device Name</span></label>
+                        <input type="text" name="newId" id="modalDeviceName" placeholder="Enter new name" class="input input-bordered w-full" />
+                    </div>
+                    <div class="form-control w-full mt-2">
+                        <label class="label"><span class="label-text">Relay Unlock Time (ms)</span></label>
+                        <input type="number" name="delay" id="modalRelayDelay" placeholder="e.g., 5000" class="input input-bordered w-full" />
+                    </div>
+                    <div class="modal-action">
+                        <button type="submit" class="btn btn-primary">Save</button>
+                        <button type="button" class="btn" onclick="settings_modal.close()">Close</button>
+                    </div>
+                </form>
+                <form method="post" action="/reset-wifi" class="mt-4">
+                     <button class="btn btn-error w-full">Reset WiFi Settings</button>
+                </form>
+            </div>
+            <form method="dialog" class="modal-backdrop"><button>close</button></form>
+        </dialog>
     </div>
+
     <script>
+        const wifiIconSvg = document.getElementById('wifi-icon-svg');
+        function updateWifiIcon(rssi) {
+            let bars = 0;
+            if (rssi > -55) bars = 4;
+            else if (rssi > -65) bars = 3;
+            else if (rssi > -75) bars = 2;
+            else if (rssi > -85) bars = 1;
+            
+            const colors = ['#d1d5db', '#d1d5db', '#d1d5db', '#d1d5db']; // Gray for all bars initially
+            for (let i = 0; i < bars; i++) {
+                colors[i] = '#10b981'; // Green for active bars
+            }
+
+            wifiIconSvg.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M5 12.55a11 11 0 0 1 14.08 0" stroke="${colors[3]}"></path>
+                    <path d="M8.5 16.05a6 6 0 0 1 6.98 0" stroke="${colors[2]}"></path>
+                    <path d="M12 19.5a2 2 0 0 1 .02 0" stroke="${colors[1]}"></path>
+                    <path d="M12 19.5a2 2 0 0 1 .02 0" fill="${colors[0]}" stroke="none"></path>
+                </svg>
+            `;
+        }
+
         function fetchData() {
             fetch('/data')
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('deviceName').innerText = data.deviceId;
+                    document.getElementById('modalDeviceName').value = data.deviceId;
                     document.getElementById('rssi').innerText = data.rssi;
                     document.getElementById('uid').innerText = data.lastUid;
                     document.getElementById('name').innerText = data.lastScannedName;
                     document.getElementById('designation').innerText = data.lastScannedDesignation;
+                    document.getElementById('modalRelayDelay').value = data.relayDelay;
+
                     const verifySpan = document.getElementById('verification');
                     verifySpan.innerText = data.lastVerificationStatus;
-                    verifySpan.className = data.lastVerificationStatus === 'OK' ? 'status-ok' : 'status-fail';
+                    if (data.lastVerificationStatus === 'OK') {
+                        verifySpan.className = 'badge badge-success';
+                    } else if (data.lastVerificationStatus === 'N/A') {
+                        verifySpan.className = 'badge badge-ghost';
+                    } else {
+                        verifySpan.className = 'badge badge-error';
+                    }
+                    updateWifiIcon(data.rssi);
                 });
         }
         setInterval(fetchData, 2000);
@@ -183,6 +243,7 @@ void handleData() {
     JsonDocument doc;
     doc["deviceId"] = deviceId;
     doc["rssi"] = lastRssi;
+    doc["relayDelay"] = relayDelay;
     doc["lastUid"] = lastUid;
     doc["lastScannedName"] = lastScannedName;
     doc["lastScannedDesignation"] = lastScannedDesignation;
@@ -192,7 +253,7 @@ void handleData() {
     server.send(200, "application/json", jsonString);
 }
 
-void handleUpdate() {
+void handleSettings() {
     if (server.hasArg("newId")) {
         String newId = server.arg("newId");
         if (newId.length() > 0) {
@@ -200,19 +261,31 @@ void handleUpdate() {
             preferences.putString("deviceId", deviceId);
         }
     }
+    if (server.hasArg("delay")) {
+        relayDelay = server.arg("delay").toInt();
+        preferences.putUInt("relayDelay", relayDelay);
+    }
     server.sendHeader("Location", "/");
-    server.send(302, "text/plain", "Updated!");
+    server.send(302, "text/plain", "Settings Saved!");
 }
 
 void handleUnlock() {
     Serial.println("Manual unlock request from web panel.");
     playSuccessSound();
     digitalWrite(RELAY_PIN, HIGH);
-    delay(5000);
+    delay(relayDelay);
     digitalWrite(RELAY_PIN, LOW);
-    Serial.println("Relay deactivated.");
     server.sendHeader("Location", "/");
     server.send(302, "text/plain", "Unlocked!");
+}
+
+void handleResetWifi() {
+    WiFiManager wifiManager;
+    wifiManager.resetSettings();
+    Serial.println("WiFi settings have been reset. Restarting...");
+    showMessage("WiFi Reset!", "Restarting...");
+    delay(2000);
+    ESP.restart();
 }
 
 void setup() {
@@ -220,14 +293,13 @@ void setup() {
   
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW); // Ensure relay is off at start
+  digitalWrite(RELAY_PIN, LOW);
 
-  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { 
-    for(;;);
-  }
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { for(;;); }
 
   preferences.begin("nfc-app", false);
   deviceId = preferences.getString("deviceId", "ESP32-NFC-01");
+  relayDelay = preferences.getUInt("relayDelay", 5000);
   
   showMessage("Device: " + deviceId, "Starting...");
   delay(2000);
@@ -241,8 +313,10 @@ void setup() {
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   server.on("/", HTTP_GET, handleRoot);
   server.on("/data", HTTP_GET, handleData);
-  server.on("/update", HTTP_POST, handleUpdate);
-  server.on("/unlock", HTTP_POST, handleUnlock); // New endpoint for unlock
+  server.on("/settings", HTTP_POST, handleSettings);
+  server.on("/unlock", HTTP_POST, handleUnlock);
+
+  server.on("/reset-wifi", HTTP_POST, handleResetWifi);
   server.begin();
   
   showMessage("WiFi Connected!", "IP: " + WiFi.localIP().toString());
@@ -329,10 +403,9 @@ void loop() {
         playSuccessSound();
         displayUserInfoCard(lastScannedName, lastScannedDesignation);
         
-        // Activate relay for 5 seconds
         Serial.println("Access Granted. Activating Relay.");
         digitalWrite(RELAY_PIN, HIGH);
-        delay(5000);
+        delay(relayDelay);
         digitalWrite(RELAY_PIN, LOW);
         Serial.println("Relay Deactivated.");
       } else {
