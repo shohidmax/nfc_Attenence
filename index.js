@@ -48,6 +48,8 @@ async function run() {
     })
     app.get('/api/nfcdataupdate', async(req, res) =>{
       const query = {};
+    console.log(query);
+
       const cursor = NFCupdateCollection.find(query);
       const accounts = await cursor.toArray();
       res.send(accounts);
