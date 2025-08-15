@@ -45,7 +45,7 @@ async function run() {
       const accounts = await cursor.toArray();
       res.send(accounts);
     })
-
+   
     app.post('/api/nfc', async (req, res) => {
       const accounts = req.body;
       const result = await NFCCollection.insertOne(accounts);
