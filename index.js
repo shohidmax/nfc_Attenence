@@ -64,8 +64,9 @@ async function run() {
       const result = await NFCCollection.insertOne(accounts);
       res.send( { "name": "MD. SARWAR JAHAN", "designation": "Developer", "verify": "OK" });
     }); 
-    app.post('/api/nfcupdate', async (req, res) => {
+    app.post('/api/nfcupdat', async (req, res) => {
       const accounts = req.body;
+    console.log(accounts);
       const result = await NFCupdateCollection.insertOne(accounts);
       res.send(result);
     }); 
