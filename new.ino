@@ -312,7 +312,7 @@ void setup() {
   server.on("/reset-wifi", HTTP_POST, handleResetWifi);
   server.on("/toggle-backup", HTTP_POST, handleToggleBackup);
   server.on("/update-all", HTTP_POST, handleUpdateAll);
-  server.on("/download-data", HTTP_GET, handleDownloadData); // Changed endpoint
+  server.on("/download-data", HTTP_GET, handleDownloadData);
   server.begin();
   
   showMessage("WiFi Connected!", "IP: " + WiFi.localIP().toString());
@@ -333,8 +333,11 @@ void loop() {
       checkServerStatus();
   }
 
-  if ((WiFi.status() == WL_CONNECTED && !backupModeEnabled && backupCount > 0) || (manualUpdateRequested && backupCount > 0)) {
-      sendBackedUpData();
+  // Check if conditions are met to send backup data
+  if (WiFi.status() == WL_CONNECTED && serverStatus == "Active" && backupCount > 0) {
+      if (!backupModeEnabled || manualUpdateRequested) {
+          sendBackedUpData();
+      }
   }
 
   static unsigned long lastDisplayUpdate = 0;
@@ -497,6 +500,24 @@ void sendBackedUpData() {
             int httpResponseCode = http.POST(jsonData);
 
             if (httpResponseCode > 0) {
+                lastApiResponse = http.getString();
+                Serial.println("Backup API Response: " + lastApiResponse);
+                
+                // Parse and display response from backup update
+                JsonDocument responseDoc;
+                deserializeJson(responseDoc, lastApiResponse);
+                lastScannedName = responseDoc["name"].as<String>();
+                lastScannedDesignation = responseDoc["designation"].as<String>();
+                lastVerificationStatus = responseDoc["verify"].as<String>();
+
+                if (lastVerificationStatus == "OK") {
+                    displayUserInfoCard(lastScannedName, lastScannedDesignation);
+                } else {
+                    showMessage("Update OK", "User Not Verified");
+                }
+                delay(3000); // Show info on display
+
+                // Remove from backup after successful post
                 preferences.remove(key.c_str());
                 backupReadIndex = (backupReadIndex + 1) % MAX_BACKUP_SCANS;
                 backupCount--;
